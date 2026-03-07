@@ -1,0 +1,311 @@
+// Prisma schema for AI Fashion Collaboration Platform
+// Complete database schema for garments, fabrics, tech packs, and collaboration
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── User & Roles ──────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  avatar    String?
+  role      String   @default("designer") // brand_owner, designer, product_developer, factory, pattern_maker, supplier
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects       ProjectMember[]
+  comments       Comment[]
+  annotations    Annotation[]
+  chatMessages   ChatMessage[]
+  sampleReviews  SampleReview[]
+  versionChanges GarmentVersion[]
+}
+
+// ─── Project / Vault ───────────────────────────────────────────
+
+model Project {
+  id           String   @id @default(uuid())
+  name         String
+  collection   String?
+  season       String?
+  category     String?
+  targetMarket String?
+  status       String   @default("concept") // concept, design, pattern, prototype, sample_1, sample_2, production
+  thumbnail    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  members  ProjectMember[]
+  garments Garment[]
+}
+
+model ProjectMember {
+  id        String @id @default(uuid())
+  role      String @default("viewer") // owner, editor, viewer, factory
+  userId    String
+  projectId String
+
+  user    User    @relation(fields: [userId], references: [id])
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+}
+
+// ─── Garment ───────────────────────────────────────────────────
+
+model Garment {
+  id               String   @id @default(uuid())
+  name             String
+  description      String?
+  garmentType      String   // hoodie, t_shirt, jacket, pants, shorts, dress, coat
+  constructionType String?  // cut_and_sew, knit, woven
+  status           String   @default("draft") // draft, in_review, approved, in_production
+  modelUrl         String?  // URL to 3D model file
+  flatSketchUrl    String?
+  colorways        String?  // JSON array of hex colors
+  projectId        String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fabrics       GarmentFabric[]
+  trims         GarmentTrim[]
+  measurements  Measurement[]
+  annotations   Annotation[]
+  comments      Comment[]
+  versions      GarmentVersion[]
+  techPack      TechPack?
+  patterns      PatternPiece[]
+  sampleReviews SampleReview[]
+  timeline      TimelineEvent[]
+  chatMessages  ChatMessage[]
+}
+
+// ─── Fabric ────────────────────────────────────────────────────
+
+model Fabric {
+  id          String  @id @default(uuid())
+  name        String
+  type        String  // cotton_jersey, french_terry, denim, polyester, nylon, silk, wool, linen
+  weight      Int     // GSM
+  composition String  // e.g., "100% cotton", "80% cotton 20% polyester"
+  stretch     String? // none, low, medium, high
+  weaveType   String? // plain, twill, satin, knit
+  color       String?
+  supplierName String?
+  pricePerYard Float?
+  thumbnailUrl String?
+  createdAt   DateTime @default(now())
+
+  garments GarmentFabric[]
+}
+
+model GarmentFabric {
+  id        String @id @default(uuid())
+  garmentId String
+  fabricId  String
+  placement String // main_body, lining, trim, collar, cuff
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+  fabric  Fabric  @relation(fields: [fabricId], references: [id])
+}
+
+// ─── Trims ─────────────────────────────────────────────────────
+
+model Trim {
+  id           String  @id @default(uuid())
+  name         String
+  type         String  // button, zipper, drawstring, label, elastic, snap, rivet, grommet
+  material     String?
+  color        String?
+  size         String?
+  supplierName String?
+  pricePerUnit Float?
+  thumbnailUrl String?
+  createdAt    DateTime @default(now())
+
+  garments GarmentTrim[]
+}
+
+model GarmentTrim {
+  id        String @id @default(uuid())
+  garmentId String
+  trimId    String
+  placement String  // front, back, sleeve, pocket, collar, waistband
+  quantity  Int     @default(1)
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+  trim    Trim    @relation(fields: [trimId], references: [id])
+}
+
+// ─── Measurements & Size Grading ───────────────────────────────
+
+model Measurement {
+  id        String @id @default(uuid())
+  garmentId String
+  size      String // XS, S, M, L, XL, XXL
+  chest     Float?
+  waist     Float?
+  hip       Float?
+  length    Float?
+  sleeveLength Float?
+  shoulderWidth Float?
+  neckOpening Float?
+  hemWidth   Float?
+  unit       String @default("cm") // cm, inches
+  tolerance  Float  @default(0.5)
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+
+  @@unique([garmentId, size])
+}
+
+// ─── Pattern Pieces ────────────────────────────────────────────
+
+model PatternPiece {
+  id          String  @id @default(uuid())
+  garmentId   String
+  name        String  // front_panel, back_panel, left_sleeve, right_sleeve, collar, pocket
+  svgPath     String? // SVG data for the pattern shape
+  grainLine   String?
+  seamAllowance Float @default(1.0) // cm
+  notes       String?
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+}
+
+// ─── Tech Pack ─────────────────────────────────────────────────
+
+model TechPack {
+  id               String   @id @default(uuid())
+  garmentId        String   @unique
+  version          Int      @default(1)
+  status           String   @default("draft") // draft, review, approved, sent_to_factory
+  constructionNotes String?
+  stitchType       String?  // single_needle, double_needle, overlock, flatlock, coverstitch
+  washInstructions String?
+  labelPlacement   String?
+  packagingNotes   String?
+  exportedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  garment         Garment          @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+  billOfMaterials BillOfMaterial[]
+}
+
+model BillOfMaterial {
+  id          String @id @default(uuid())
+  techPackId  String
+  itemName    String
+  itemType    String // fabric, trim, thread, label, packaging
+  description String?
+  quantity    String?
+  unit        String? // yards, meters, pieces
+  unitCost    Float?
+  supplierName String?
+
+  techPack TechPack @relation(fields: [techPackId], references: [id], onDelete: Cascade)
+}
+
+// ─── Annotations (pinned on garment) ───────────────────────────
+
+model Annotation {
+  id        String   @id @default(uuid())
+  garmentId String
+  authorId  String
+  content   String
+  posX      Float    // 3D coordinate X
+  posY      Float    // 3D coordinate Y
+  posZ      Float    // 3D coordinate Z
+  status    String   @default("open") // open, resolved
+  createdAt DateTime @default(now())
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id])
+}
+
+// ─── Comments ──────────────────────────────────────────────────
+
+model Comment {
+  id        String   @id @default(uuid())
+  garmentId String
+  authorId  String
+  content   String
+  parentId  String?  // for threaded comments
+  createdAt DateTime @default(now())
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id])
+}
+
+// ─── Chat Messages ─────────────────────────────────────────────
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  garmentId String
+  authorId  String
+  content   String
+  messageType String @default("text") // text, image, file, system
+  fileUrl   String?
+  createdAt DateTime @default(now())
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id])
+}
+
+// ─── Garment Versions ──────────────────────────────────────────
+
+model GarmentVersion {
+  id          String   @id @default(uuid())
+  garmentId   String
+  authorId    String
+  versionNum  Int
+  changeNote  String
+  snapshotUrl String?  // screenshot of the version
+  data        String?  // JSON snapshot of garment state
+  createdAt   DateTime @default(now())
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id])
+}
+
+// ─── Sample Reviews ────────────────────────────────────────────
+
+model SampleReview {
+  id         String   @id @default(uuid())
+  garmentId  String
+  reviewerId String
+  sampleNum  Int      // 1, 2, 3...
+  status     String   @default("pending") // pending, approved, revision_needed
+  imageUrls  String?  // JSON array of image URLs
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  garment  Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+  reviewer User    @relation(fields: [reviewerId], references: [id])
+}
+
+// ─── Timeline Events ──────────────────────────────────────────
+
+model TimelineEvent {
+  id        String   @id @default(uuid())
+  garmentId String
+  stage     String   // concept, design, pattern, prototype, sample_1, sample_2, production, shipping
+  title     String
+  description String?
+  status    String   @default("pending") // pending, in_progress, completed
+  dueDate   DateTime?
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+}
